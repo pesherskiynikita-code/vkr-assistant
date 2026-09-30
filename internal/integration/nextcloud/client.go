@@ -12,9 +12,10 @@ import (
 )
 
 type deckBoard struct {
-	ID       int
-	Title    string
-	Archived bool
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Archived  bool   `json:"archived"`
+	DeletedAt string `json:"deletedAt"`
 }
 
 type Client struct {
@@ -53,7 +54,9 @@ func (c *Client) ListBoards(ctx context.Context) ([]integration.Board, error) {
 	result := make([]integration.Board, 0, len(boards))
 	for _, b := range boards {
 		if b.Archived || strings.HasPrefix(strings.TrimSpace(b.Title), "$") {
-			continue
+			if b.DeletedAt == "0" {
+				continue
+			}
 		}
 		result = append(result, integration.Board{ID: b.ID, Title: strings.TrimSpace(b.Title)})
 	}

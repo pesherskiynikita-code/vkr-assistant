@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -11,8 +12,13 @@ import (
 )
 
 func main() {
-	if err := godotenv.Load(); err != nil {
-		log.Fatal(err)
+	err := godotenv.Load()
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			log.Println(".env не найдена")
+		} else {
+			log.Fatal(err)
+		}
 	}
 
 	url := os.Getenv("NEXTCLOUD_URL")
