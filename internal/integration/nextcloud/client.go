@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,10 +13,10 @@ import (
 )
 
 type deckBoard struct {
-	ID        string `json:"id"`
+	ID        int    `json:"id"`
 	Title     string `json:"title"`
 	Archived  bool   `json:"archived"`
-	DeletedAt string `json:"deletedAt"`
+	DeletedAt int64  `json:"deletedAt"`
 }
 
 type Client struct {
@@ -53,12 +54,11 @@ func (c *Client) ListBoards(ctx context.Context) ([]integration.Board, error) {
 	}
 	result := make([]integration.Board, 0, len(boards))
 	for _, b := range boards {
-		if b.Archived || strings.HasPrefix(strings.TrimSpace(b.Title), "$") {
-			if b.DeletedAt == "0" {
-				continue
-			}
+		if b.Archived || strings.HasPrefix(strings.TrimSpace(b.Title), "$") || b.DeletedAt != 0 {
+			continue
 		}
-		result = append(result, integration.Board{ID: b.ID, Title: strings.TrimSpace(b.Title)})
+
+		result = append(result, integration.Board{ID: strconv.Itoa(b.ID), Title: strings.TrimSpace(b.Title)})
 	}
 	return result, nil
 }

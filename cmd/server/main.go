@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
+	"github.com/pesherskiynikita-code/vkr-assistant/internal/config"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration/nextcloud"
 )
 
@@ -20,19 +21,21 @@ func main() {
 			log.Fatal(err)
 		}
 	}
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	url := os.Getenv("NEXTCLOUD_URL")
-	user := os.Getenv("NEXTCLOUD_USER")
-	password := os.Getenv("NEXTCLOUD_APP_PASSWORD")
-
+	url := cfg.NextcloudURL
+	user := cfg.NextcloudUser
+	password := cfg.NextcloudAppPassword
 	client := nextcloud.NewClient(url, user, password)
-
 	boards, err := client.ListBoards(context.Background())
 
 	if err != nil {
 		log.Fatal(err)
 	}
 	for _, b := range boards {
-		fmt.Printf("%d - %s\n", b.ID, b.Title)
+		fmt.Printf("%s - %s\n", b.ID, b.Title)
 	}
 }

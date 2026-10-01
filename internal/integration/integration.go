@@ -3,7 +3,7 @@ package integration
 import "context"
 
 type Board struct {
-	ID    int
+	ID    string
 	Title string
 }
 
