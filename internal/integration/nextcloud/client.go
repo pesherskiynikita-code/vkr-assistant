@@ -3,6 +3,7 @@ package nextcloud
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -18,7 +19,12 @@ type deckBoard struct {
 	Archived  bool   `json:"archived"`
 	DeletedAt int64  `json:"deletedAt"`
 }
-
+type deckStack struct {
+	ID        int    `json:"id"`
+	Title     string `json:"title"`
+	Archived  bool   `json:"archived"`
+	DeletedAt int64  `json:"deletedAt"`
+}
 type Client struct {
 	baseURL    string
 	user       string
@@ -26,9 +32,12 @@ type Client struct {
 	httpClient *http.Client
 }
 
+var ErrStackNotFound = errors.New("stack not found")
+
 func NewClient(baseURL, user, password string) *Client {
 	return &Client{baseURL: baseURL, user: user, password: password, httpClient: &http.Client{Timeout: 10 * time.Second}}
 }
+
 func (c *Client) ListBoards(ctx context.Context) ([]integration.Board, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/index.php/apps/deck/api/v1.0/boards", nil)
 	if err != nil {
@@ -61,4 +70,39 @@ func (c *Client) ListBoards(ctx context.Context) ([]integration.Board, error) {
 		result = append(result, integration.Board{ID: strconv.Itoa(b.ID), Title: strings.TrimSpace(b.Title)})
 	}
 	return result, nil
+
+}
+func (c *Client) findStack(ctx context.Context, boardID int, name string) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/index.php/apps/deck/api/v1.0/boards/%d/stacks", c.baseURL, boardID), nil)
+	if err != nil {
+		return 0, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("OCS-APIRequest", "true")
+	req.SetBasicAuth(c.user, c.password)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+	var stacks []deckStack
+	if err := json.NewDecoder(resp.Body).Decode(&stacks); err != nil {
+		return 0, fmt.Errorf("decode: %w", err)
+	}
+	for _, s := range stacks {
+		if strings.HasPrefix(strings.TrimSpace(s.Title), "$") || s.DeletedAt != 0 {
+			continue
+
+		}
+		if strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(s.Title)) {
+			return s.ID, nil
+
+		}
+	}
+	return 0, fmt.Errorf("%d %q %w", boardID, name, ErrStackNotFound)
 }

@@ -38,4 +38,5 @@ func main() {
 	for _, b := range boards {
 		fmt.Printf("%s - %s\n", b.ID, b.Title)
 	}
+
 }
