@@ -9,6 +9,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/config"
+	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration/nextcloud"
 )
 
@@ -29,7 +30,8 @@ func main() {
 	url := cfg.NextcloudURL
 	user := cfg.NextcloudUser
 	password := cfg.NextcloudAppPassword
-	client := nextcloud.NewClient(url, user, password)
+	stack := cfg.NextcloudStack
+	client := nextcloud.NewClient(url, user, password, stack)
 	boards, err := client.ListBoards(context.Background())
 
 	if err != nil {
@@ -38,5 +40,8 @@ func main() {
 	for _, b := range boards {
 		fmt.Printf("%s - %s\n", b.ID, b.Title)
 	}
-
+	_, err = client.CreateCard(context.Background(), "29", integration.NewCard{Title: "тест"})
+	if err != nil {
+		log.Fatal(err)
+	}
 }

@@ -30,12 +30,13 @@ type Client struct {
 	user       string
 	password   string
 	httpClient *http.Client
+	stack      string
 }
 
 var ErrStackNotFound = errors.New("stack not found")
 
-func NewClient(baseURL, user, password string) *Client {
-	return &Client{baseURL: baseURL, user: user, password: password, httpClient: &http.Client{Timeout: 10 * time.Second}}
+func NewClient(baseURL, user, password, stack string) *Client {
+	return &Client{baseURL: baseURL, user: user, password: password, stack: stack, httpClient: &http.Client{Timeout: 10 * time.Second}}
 }
 
 func (c *Client) ListBoards(ctx context.Context) ([]integration.Board, error) {
@@ -105,4 +106,16 @@ func (c *Client) findStack(ctx context.Context, boardID int, name string) (int, 
 		}
 	}
 	return 0, fmt.Errorf("%d %q %w", boardID, name, ErrStackNotFound)
+}
+func (c *Client) CreateCard(ctx context.Context, boardID string, card integration.NewCard) (integration.Card, error) {
+	n, err := strconv.Atoi(boardID)
+	if err != nil {
+		return integration.Card{}, fmt.Errorf("no id: %w", err)
+	}
+	stackID, err := c.findStack(ctx, n, c.stack)
+	if err != nil {
+		return integration.Card{}, fmt.Errorf("create card: %w", err)
+
+	}
+	fmt.Println(stackID)
 }
