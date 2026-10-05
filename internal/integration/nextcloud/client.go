@@ -1,6 +1,7 @@
 package nextcloud
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,12 @@ type deckBoard struct {
 	Title     string `json:"title"`
 	Archived  bool   `json:"archived"`
 	DeletedAt int64  `json:"deletedAt"`
+}
+type deckNewCard struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+	Order       int    `json:"order"`
 }
 type deckStack struct {
 	ID        int    `json:"id"`
@@ -110,12 +117,42 @@ func (c *Client) findStack(ctx context.Context, boardID int, name string) (int, 
 func (c *Client) CreateCard(ctx context.Context, boardID string, card integration.NewCard) (integration.Card, error) {
 	n, err := strconv.Atoi(boardID)
 	if err != nil {
-		return integration.Card{}, fmt.Errorf("no id: %w", err)
+		return integration.Card{}, fmt.Errorf("неверный id доски:%q %w", boardID, err)
 	}
 	stackID, err := c.findStack(ctx, n, c.stack)
 	if err != nil {
 		return integration.Card{}, fmt.Errorf("create card: %w", err)
 
 	}
-	fmt.Println(stackID)
+	reqBody := deckNewCard{
+		Title:       card.Title,
+		Description: card.Description,
+		Type:        "plain",
+		Order:       999,
+	}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return integration.Card{}, fmt.Errorf("encode card: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/index.php/apps/deck/api/v1.0/boards/%d/stacks/%d/cards", c.baseURL, n, stackID), bytes.NewReader(body))
+	if err != nil {
+		return integration.Card{}, fmt.Errorf("build request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("OCS-APIRequest", "true")
+	req.SetBasicAuth(c.user, c.password)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return integration.Card{}, fmt.Errorf("do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return integration.Card{}, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+
+	return integration.Card{}, nil
 }
