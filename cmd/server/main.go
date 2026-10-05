@@ -1,15 +1,14 @@
 package main
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/joho/godotenv"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/config"
-	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration"
+
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration/nextcloud"
 )
 
@@ -27,22 +26,16 @@ func main() {
 		log.Fatal(err)
 	}
 
-	url := cfg.NextcloudURL
-	user := cfg.NextcloudUser
-	password := cfg.NextcloudAppPassword
-	stack := cfg.NextcloudStack
-	client := nextcloud.NewClient(url, user, password, stack)
-	boards, err := client.ListBoards(context.Background())
+	nextcloud.NewClient(cfg.NextcloudURL, cfg.NextcloudUser, cfg.NextcloudAppPassword, cfg.NextcloudStack)
+	client := nextcloud.NewClient
+	_ = client
 
-	if err != nil {
-		log.Fatal(err)
-	}
-	for _, b := range boards {
-		fmt.Printf("%s - %s\n", b.ID, b.Title)
-	}
-	created, err := client.CreateCard(context.Background(), "29", integration.NewCard{Title: "тест"})
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("%s - %s\n", created.ID, created.Title)
+	mux := http.NewServeMux() // «табличка»: какой адрес какой функцией обслуживать
+
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
+
+	log.Println("слушаю :8080")
+	log.Fatal(http.ListenAndServe(":8080", mux))
 }
