@@ -26,6 +26,10 @@ type deckNewCard struct {
 	Type        string `json:"type"`
 	Order       int    `json:"order"`
 }
+type deckCard struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
+}
 type deckStack struct {
 	ID        int    `json:"id"`
 	Title     string `json:"title"`
@@ -153,6 +157,10 @@ func (c *Client) CreateCard(ctx context.Context, boardID string, card integratio
 	if resp.StatusCode != http.StatusOK {
 		return integration.Card{}, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
+	var created deckCard
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		return integration.Card{}, fmt.Errorf("decode: %w", err)
+	}
 
-	return integration.Card{}, nil
+	return integration.Card{ID: strconv.Itoa(created.ID), Title: created.Title}, nil
 }
