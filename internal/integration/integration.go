@@ -3,8 +3,8 @@ package integration
 import "context"
 
 type Board struct {
-	ID    string
-	Title string
+	ID    string `json:"id"`
+	Title string `json:"title"`
 }
 
 type Integration interface {
@@ -13,11 +13,11 @@ type Integration interface {
 }
 
 type NewCard struct {
-	Title       string
-	Description string
+	Title       string `json:"title"`
+	Description string `json:"description"`
 }
 
 type Card struct {
-	ID    string
-	Title string
+	ID    string `json:"id"`
+	Title string `json:"title"`
 }
