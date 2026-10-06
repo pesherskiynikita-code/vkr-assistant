@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
@@ -161,6 +162,40 @@ func (c *Client) CreateCard(ctx context.Context, boardID string, card integratio
 	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
 		return integration.Card{}, fmt.Errorf("decode: %w", err)
 	}
+	for _, att := range card.Attachments {
+		if err := c.addAttachment(ctx, n, stackID, created.ID, att); err != nil {
+			return integration.Card{}, fmt.Errorf("attach %q to card %d: %w", att.Filename, created.ID, err)
+		}
+	}
 
 	return integration.Card{ID: strconv.Itoa(created.ID), Title: created.Title}, nil
+}
+func (c *Client) addAttachment(ctx context.Context, boardID, stackID, cardID int, a integration.Attachment) error {
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	mw.WriteField("type", "file")
+	fw, err := mw.CreateFormFile("file", a.Filename)
+	if err != nil {
+		return fmt.Errorf("неверный формат вложения:%w", err)
+	}
+	fw.Write(a.Data)
+	mw.Close()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/index.php/apps/deck/api/v1.1/boards/%d/stacks/%d/cards/%d/attachments", c.baseURL, boardID, stackID, cardID), &buf)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("OCS-APIRequest", "true")
+	req.SetBasicAuth(c.user, c.password)
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+	return nil
 }

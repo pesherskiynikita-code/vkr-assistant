@@ -13,11 +13,16 @@ type Integration interface {
 }
 
 type NewCard struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
+	Title       string       `json:"title"`
+	Description string       `json:"description"`
+	Attachments []Attachment `json:"-"`
 }
 
 type Card struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
+}
+type Attachment struct {
+	Filename string
+	Data     []byte
 }
