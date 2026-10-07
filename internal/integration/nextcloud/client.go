@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"strconv"
@@ -174,6 +175,7 @@ func (c *Client) addAttachment(ctx context.Context, boardID, stackID, cardID int
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	mw.WriteField("type", "file")
+	mw.WriteField("data", "")
 	fw, err := mw.CreateFormFile("file", a.Filename)
 	if err != nil {
 		return fmt.Errorf("неверный формат вложения:%w", err)
@@ -195,7 +197,9 @@ func (c *Client) addAttachment(ctx context.Context, boardID, stackID, cardID int
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected status: %d: %s", resp.StatusCode, body)
+
 	}
 	return nil
 }
