@@ -175,7 +175,7 @@ func (c *Client) addAttachment(ctx context.Context, boardID, stackID, cardID int
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	mw.WriteField("type", "file")
-	mw.WriteField("data", "")
+	mw.WriteField("data", "") // Deck 1.17–1.18 требует поле data, иначе отвечает пустым 400 (исправлено в 1.19)
 	fw, err := mw.CreateFormFile("file", a.Filename)
 	if err != nil {
 		return fmt.Errorf("неверный формат вложения:%w", err)

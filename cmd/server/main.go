@@ -7,8 +7,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
+	"github.com/pesherskiynikita-code/vkr-assistant/internal/ai"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/config"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration/nextcloud"
@@ -27,7 +29,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
+	var assistant ai.Assistant = ai.Stub{}
 	client := nextcloud.NewClient(cfg.NextcloudURL, cfg.NextcloudUser, cfg.NextcloudAppPassword, cfg.NextcloudStack)
 	mux := http.NewServeMux()
 
@@ -88,6 +90,42 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(card)
+	})
+
+	mux.HandleFunc("POST /assist", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Text string `json:"text"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(req.Text) == "" {
+			http.Error(w, "text is required", http.StatusBadRequest)
+			return
+		}
+
+		// 2. доски: скопируй начало своего GET /boards (ListBoards + 502)
+		boards, err := client.ListBoards(r.Context())
+		if err != nil {
+			log.Println("list boards:", err)
+			http.Error(w, "не удалось получить доски", http.StatusBadGateway)
+			return
+		}
+
+		// 3. спрашиваем ассистента, вызов как у CreateCard в POST /cards
+		cmd, err := assistant.Parse(r.Context(), req.Text, boards)
+		if errors.Is(err, ai.ErrNoBoard) {
+			http.Error(w, "не удалось определить доску", http.StatusUnprocessableEntity)
+			return
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+
+		json.NewEncoder(w).Encode(cmd)
+
 	})
 
 	log.Println("слушаю :8080")
