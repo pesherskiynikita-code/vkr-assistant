@@ -29,7 +29,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	var assistant ai.Assistant = ai.Stub{}
+	var assistant ai.Assistant = ai.NewOllama(cfg.OllamaURL, cfg.OllamaModel)
 	client := nextcloud.NewClient(cfg.NextcloudURL, cfg.NextcloudUser, cfg.NextcloudAppPassword, cfg.NextcloudStack)
 	mux := http.NewServeMux()
 
@@ -105,7 +105,6 @@ func main() {
 			return
 		}
 
-		// 2. доски: скопируй начало своего GET /boards (ListBoards + 502)
 		boards, err := client.ListBoards(r.Context())
 		if err != nil {
 			log.Println("list boards:", err)
@@ -113,7 +112,6 @@ func main() {
 			return
 		}
 
-		// 3. спрашиваем ассистента, вызов как у CreateCard в POST /cards
 		cmd, err := assistant.Parse(r.Context(), req.Text, boards)
 		if errors.Is(err, ai.ErrNoBoard) {
 			http.Error(w, "не удалось определить доску", http.StatusUnprocessableEntity)

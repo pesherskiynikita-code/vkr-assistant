@@ -10,6 +10,8 @@ type Config struct {
 	NextcloudUser        string
 	NextcloudAppPassword string
 	NextcloudStack       string
+	OllamaURL            string
+	OllamaModel          string
 }
 
 func required(key string) (string, error) {
@@ -41,5 +43,15 @@ func Load() (Config, error) {
 	if stack == "" {
 		stack = "принято"
 	}
-	return Config{NextcloudURL: url, NextcloudUser: user, NextcloudAppPassword: pass, NextcloudStack: stack}, nil
+
+	model := os.Getenv("OllamaModel")
+	if model == "" {
+		model = "qwen2.5:7b"
+	}
+
+	olUrl := os.Getenv("OllamaURL")
+	if err != nil {
+		return Config{}, err
+	}
+	return Config{NextcloudURL: url, NextcloudUser: user, NextcloudAppPassword: pass, NextcloudStack: stack, OllamaURL: olUrl, OllamaModel: model}, nil
 }
