@@ -14,6 +14,7 @@ import (
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/config"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration/nextcloud"
+	"github.com/pesherskiynikita-code/vkr-assistant/internal/stt"
 )
 
 func main() {
@@ -30,6 +31,7 @@ func main() {
 		log.Fatal(err)
 	}
 	var assistant ai.Assistant = ai.NewOllama(cfg.OllamaURL, cfg.OllamaModel)
+	var transcriber stt.Transcriber = stt.Stub{}
 	client := nextcloud.NewClient(cfg.NextcloudURL, cfg.NextcloudUser, cfg.NextcloudAppPassword, cfg.NextcloudStack)
 	mux := http.NewServeMux()
 
@@ -125,6 +127,33 @@ func main() {
 		json.NewEncoder(w).Encode(cmd)
 
 	})
+	mux.HandleFunc("POST /transcribe", func(w http.ResponseWriter, r *http.Request) {
+	// 1. r.ParseMultipartForm(32 << 20), ошибка → 400
+		if err := r.ParseMultipartForm(32 << 20); err != nil { // разобрать форму, до 32 МБ в памяти
+			http.Error(w, "некорректная форма", http.StatusBadRequest)
+			return
+		}
+		file, header, err := r.FormFile("audio")
+		if err != nil {
+			http.Error(w, "нет поля аудио", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		data, err := io.ReadAll(file)
+		if err != nil {
+			http.Error(w, "нет поля аудио", http.StatusBadRequest)
+			return
+		}
+		text, err := transcriber.Transcribe(r.Context(), header.Filename, data)
+		if err != nil {
+			log.Println("не удалось прочитать файл", err)
+			http.Error(w, "не удалось получить текст", http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct{ Text string `json:"text"`}{text})
+})
 
 	log.Println("слушаю :8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))

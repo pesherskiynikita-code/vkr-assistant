@@ -1,4 +1,5 @@
 // Всё общение с Go-бэкендом собрано здесь, чтобы экраны не знали про URL и коды ответов.
+import { File } from 'expo-file-system';
 
 // Адрес Go-бэкенда. Телефон не видит localhost компьютера,
 // поэтому здесь IP компьютера в локальной сети (ipconfig → IPv4-адрес).
@@ -11,8 +12,17 @@ const ASSIST_TIMEOUT_MS = 30000;
 // Типы повторяют JSON, который отдаёт бэкенд (как структуры с json-тегами в Go).
 export type Board = { id: string; title: string };
 export type Command = { action: string; board_id: string; title: string; description: string };
-// Файл на телефоне: адрес, имя и тип. В таком виде его принимает FormData.
+// Файл на телефоне: адрес, имя и тип.
 export type LocalFile = { uri: string; name: string; type: string };
+
+// В Expo SDK 57 fetch заменён на новый (expo/fetch), и старый приём
+// form.append('files', {uri, name, type}) больше не работает: падает
+// «Unsupported FormDataPart implementation». Новый fetch умеет брать файлы
+// из expo-file-system: File сам читает байты с диска, а имя файла берёт
+// из пути (например, recording-....m4a), его же увидит Go в header.Filename.
+function filePart(f: LocalFile) {
+  return new File(f.uri) as unknown as Blob;
+}
 
 // Результат /assist: либо предложение ИИ, либо причина, почему его нет.
 export type AssistResult =
@@ -71,8 +81,7 @@ export async function assist(text: string): Promise<AssistResult> {
 // POST /transcribe: аудиофайл → текст. Поле формы audio, ответ {"text": "..."}.
 export async function transcribe(audio: LocalFile): Promise<string> {
   const form = new FormData();
-  // В React Native файл передаётся объектом {uri, name, type}.
-  form.append('audio', audio as any);
+  form.append('audio', filePart(audio));
   const resp = await fetch(`${API_URL}/transcribe`, { method: 'POST', body: form });
   if (!resp.ok) {
     throw new Error(`${resp.status}: ${await resp.text()}`);
@@ -93,7 +102,7 @@ export async function createCard(
   form.append('title', title);
   form.append('description', description);
   for (const p of photos) {
-    form.append('files', p as any);
+    form.append('files', filePart(p));
   }
   // Content-Type не ставим: fetch сам добавит его вместе с boundary.
   const resp = await fetch(`${API_URL}/cards`, { method: 'POST', body: form });
