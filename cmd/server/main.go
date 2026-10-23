@@ -13,7 +13,7 @@ import (
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/ai"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/config"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration"
-	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration/nextcloud"
+	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration/nextcloud" 
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/stt"
 )
 
