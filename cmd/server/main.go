@@ -32,6 +32,9 @@ func main() {
 	}
 	var assistant ai.Assistant = ai.NewOllama(cfg.OllamaURL, cfg.OllamaModel)
 	var transcriber stt.Transcriber = stt.Stub{}
+	if cfg.WhisperURL != "" {
+		transcriber = stt.NewWhisper(cfg.WhisperURL, cfg.WhisperModel)
+	}	
 	client := nextcloud.NewClient(cfg.NextcloudURL, cfg.NextcloudUser, cfg.NextcloudAppPassword, cfg.NextcloudStack)
 	mux := http.NewServeMux()
 
