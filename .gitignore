@@ -10,3 +10,5 @@
 
 # временные файлы с ответами API
 *.json.tmp
+
+boards.json

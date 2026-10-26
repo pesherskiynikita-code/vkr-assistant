@@ -43,18 +43,22 @@ func NewOllama(baseURL, model string) *Ollama {
 	return &Ollama{baseURL: baseURL, model: model, httpClient: &http.Client{Timeout: 60 * time.Second}}
 }
 
-const systemPrompt = `Ты раскладываешь заявки по доскам. Доски (id: название): %s. Ответь только JSON: {"board_id": "id доски", "title": "короткий заголовок заявки"}. Если ни одна доска не подходит, board_id пустой.`
+const systemPrompt =  `Ты раскладываешь заявки сервисной компании по доскам. Каждая доска это объект: магазин или здание. Доски (id: код (описание)): %s
+Выбери доску по городу, сети, номеру магазина, адресу или названию ТЦ из заявки. Ответь только JSON: {"board_id": "id доски", "title": "суть проблемы в 3–7 словах, без кода и адреса объекта"}. Пример title: "Не работает касса". Если ни одна доска не подходит, board_id пустой.`
 
 var _ Assistant = &Ollama{}
 
 func (o *Ollama) Parse(ctx context.Context, msg string, boards []integration.Board) (Command, error) {
-	// 1. доски одной строкой: "29: Личное; 35: Магазин Омск Амур; "
+
 	var list strings.Builder
 	for _, b := range boards {
-		fmt.Fprintf(&list, "%s: %s; ", b.ID, b.Title)
+		if b.Description != "" {
+			fmt.Fprintf(&list, "%s: %s (%s); ", b.ID, b.Title, b.Description)
+		} else {
+			fmt.Fprintf(&list, "%s: %s; ", b.ID, b.Title)
+		}
 	}
 
-	// 2. тело запроса, как твой JSON в PowerShell
 	reqBody := ollamaRequest{
 		Model:  o.model,
 		Stream: false,
@@ -65,9 +69,7 @@ func (o *Ollama) Parse(ctx context.Context, msg string, boards []integration.Boa
 		},
 	}
 
-	// 3. Marshal → POST o.baseURL + "/api/chat" → Content-Type → Do →
-	//    статус 200 → Decode в var out ollamaResponse (всё как в CreateCard)
-
+	
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return Command{}, fmt.Errorf("encode req: %w", err)
@@ -93,13 +95,10 @@ func (o *Ollama) Parse(ctx context.Context, msg string, boards []integration.Boa
 		return Command{}, fmt.Errorf("decode: %w", err)
 	}
 
-	// 4. в content лежит строка с JSON внутри, разбираем её ещё раз
 	var ans ollamaAnswer
 	if err := json.Unmarshal([]byte(out.Message.Content), &ans); err != nil {
 		return Command{}, fmt.Errorf("decode answer: %w", err)
 	}
-
-	// 5. проверь, что ans.BoardID есть среди boards; нет → ErrNoBoard
 
 	found := false
 	for _, b := range boards {
@@ -112,6 +111,5 @@ func (o *Ollama) Parse(ctx context.Context, msg string, boards []integration.Boa
 		return Command{}, ErrNoBoard
 	}
 
-	// 6. вернуть Command: Title от модели, а в Description исходный текст
 	return Command{Action: "create_card", BoardID: ans.BoardID, Title: ans.Title, Description: msg}, nil
 }

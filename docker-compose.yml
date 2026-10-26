@@ -13,4 +13,7 @@ services:
       OLLAMA_MODEL: ${OLLAMA_MODEL}
       WHISPER_URL: ${WHISPER_URL}
       WHISPER_MODEL: ${WHISPER_MODEL}
+      BOARDS_FILE: /data/boards.json
+    volumes:
+      - /opt/vkr-assistant/boards.json:/data/boards.json:ro
     restart: unless-stopped

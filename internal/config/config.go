@@ -14,6 +14,7 @@ type Config struct {
 	OllamaModel          string
 	WhisperURL 			 string
 	WhisperModel 		 string 
+	BoardsFile string
 }
 
 func required(key string) (string, error) {
@@ -61,5 +62,8 @@ func Load() (Config, error) {
 	if whModel == "" {
 		whModel = "Systran/faster-whisper-small"
 	}
-	return Config{NextcloudURL: url, NextcloudUser: user, NextcloudAppPassword: pass, NextcloudStack: stack, OllamaURL: olUrl, OllamaModel: model, WhisperModel: whModel, WhisperURL: whUrl}, nil
+
+	boardsFile := os.Getenv("BOARDS_FILE")
+
+	return Config{NextcloudURL: url, NextcloudUser: user, NextcloudAppPassword: pass, NextcloudStack: stack, OllamaURL: olUrl, OllamaModel: model, WhisperModel: whModel, WhisperURL: whUrl, BoardsFile: boardsFile}, nil
 }

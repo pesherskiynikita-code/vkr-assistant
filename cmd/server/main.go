@@ -15,6 +15,7 @@ import (
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration/nextcloud" 
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/stt"
+	"github.com/pesherskiynikita-code/vkr-assistant/internal/directory"
 )
 
 func main() {
@@ -30,6 +31,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	dir, err := directory.Load(cfg.boardsFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+log.Printf("справочник досок: %d записей", len(dir))
 	var assistant ai.Assistant = ai.NewOllama(cfg.OllamaURL, cfg.OllamaModel)
 	var transcriber stt.Transcriber = stt.Stub{}
 	if cfg.WhisperURL != "" {
@@ -117,6 +123,16 @@ func main() {
 			return
 		}
 
+		if len(dir) > 0 {
+			var known []integration.Board
+			for _, b := range boards {
+				if desc, ok := dir[b.ID]; ok {   
+					b.Description = desc
+					known = append(known, b)
+					}
+			}
+			boards = known
+		}
 		cmd, err := assistant.Parse(r.Context(), req.Text, boards)
 		if errors.Is(err, ai.ErrNoBoard) {
 			http.Error(w, "не удалось определить доску", http.StatusUnprocessableEntity)
