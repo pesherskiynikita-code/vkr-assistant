@@ -31,7 +31,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	dir, err := directory.Load(cfg.boardsFile)
+	dir, err := directory.Load(cfg.BoardsFile)
 	if err != nil {
 		log.Fatal(err)
 	}
