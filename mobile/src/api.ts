@@ -11,7 +11,8 @@ export const API_URL = 'http://192.168.1.112:18080';
 const ASSIST_TIMEOUT_MS = 30000;
 
 // Типы повторяют JSON, который отдаёт бэкенд (как структуры с json-тегами в Go).
-export type Board = { id: string; title: string };
+// description есть, только если бэкенд берёт его из справочника досок; иначе экран покажет одно название.
+export type Board = { id: string; title: string; description?: string };
 export type Command = { action: string; board_id: string; title: string; description: string };
 // Файл на телефоне: адрес, имя и тип.
 export type LocalFile = { uri: string; name: string; type: string };
