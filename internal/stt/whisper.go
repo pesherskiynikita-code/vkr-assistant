@@ -15,10 +15,11 @@ type Whisper struct {
 	baseURL    string
 	model      string
 	httpClient *http.Client
+	prompt string
 }
 
-func NewWhisper(baseURL, model string) *Whisper {
-	return &Whisper{baseURL: baseURL, model: model, httpClient: &http.Client{Timeout: 60 * time.Second}}
+func NewWhisper(baseURL, model, WhisperPrompt string) *Whisper {
+	return &Whisper{baseURL: baseURL, model: model, prompt: prompt, httpClient: &http.Client{Timeout: 60 * time.Second}}
 }
 
 var _ Transcriber = &Whisper{}
@@ -37,6 +38,9 @@ func (wh *Whisper) Transcribe(ctx context.Context, filename string, audio []byte
 	fw.Write(audio)
 	mw.WriteField("model", wh.model)
 	mw.WriteField("language", "ru")
+	if wh.prompt != "" {
+		mw.WriteField("prompt", wh.prompt)
+	}
 	mw.Close()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/v1/audio/transcriptions", wh.baseURL), &buf)
 	if err != nil {

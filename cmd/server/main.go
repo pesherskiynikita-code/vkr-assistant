@@ -35,11 +35,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-log.Printf("справочник досок: %d записей", len(dir))
+	log.Printf("справочник досок: %d записей", len(dir))
 	var assistant ai.Assistant = ai.NewOllama(cfg.OllamaURL, cfg.OllamaModel)
 	var transcriber stt.Transcriber = stt.Stub{}
 	if cfg.WhisperURL != "" {
-		transcriber = stt.NewWhisper(cfg.WhisperURL, cfg.WhisperModel)
+		transcriber = stt.NewWhisper(cfg.WhisperURL, cfg.WhisperModel, cfg.WhisperPrompt)
 	}	
 	client := nextcloud.NewClient(cfg.NextcloudURL, cfg.NextcloudUser, cfg.NextcloudAppPassword, cfg.NextcloudStack)
 	mux := http.NewServeMux()
