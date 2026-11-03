@@ -18,7 +18,7 @@ type Whisper struct {
 	prompt string
 }
 
-func NewWhisper(baseURL, model, WhisperPrompt string) *Whisper {
+func NewWhisper(baseURL, model, prompt string) *Whisper {
 	return &Whisper{baseURL: baseURL, model: model, prompt: prompt, httpClient: &http.Client{Timeout: 60 * time.Second}}
 }
 
