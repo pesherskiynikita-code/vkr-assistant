@@ -16,6 +16,8 @@ type Config struct {
 	WhisperModel 		 string 
 	BoardsFile 			 string
 	WhisperPrompt 		 string
+	SessionKey 			 string
+	DBPath 				 string 
 }
 
 func required(key string) (string, error) {
@@ -67,5 +69,14 @@ func Load() (Config, error) {
 
 	boardsFile := os.Getenv("BOARDS_FILE")
 
-	return Config{NextcloudURL: url, NextcloudUser: user, NextcloudAppPassword: pass, NextcloudStack: stack, OllamaURL: olUrl, OllamaModel: model, WhisperModel: whModel, WhisperURL: whUrl, BoardsFile: boardsFile, WhisperPrompt: WhPrompt}, nil
+	sessionKey, err := required("SESSION_KEY")
+	if err != nil {
+		return Config{}, err
+	}
+
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "/var/lib/vkr/vkr.db" 
+
+	return Config{NextcloudURL: url, NextcloudUser: user, NextcloudAppPassword: pass, NextcloudStack: stack, OllamaURL: olUrl, OllamaModel: model, WhisperModel: whModel, WhisperURL: whUrl, BoardsFile: boardsFile, WhisperPrompt: WhPrompt, SessionKey: sessionKey, DBPath: dbPath}, nil
 }

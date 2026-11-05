@@ -15,6 +15,7 @@ services:
       WHISPER_MODEL: ${WHISPER_MODEL}
       BOARDS_FILE: /data/boards.json
       WHISPER_PROMPT: ${WHISPER_PROMPT}
+      SESSION_KEY: ${SESSION_KEY}
     volumes:
       - /opt/vkr-assistant/boards.json:/data/boards.json:ro
     restart: unless-stopped
