@@ -69,7 +69,7 @@ func PollLogin(ctx context.Context, endpoint, token string) (res LoginResult, do
 		return LoginResult{}, false, nil
 	case http.StatusOK:
 		if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-			return LoginStart{}, false, fmt.Errorf("decode: %w", err)
+			return LoginResult{}, false, fmt.Errorf("decode: %w", err)
 		}
 		return res, true, nil
 	default:
