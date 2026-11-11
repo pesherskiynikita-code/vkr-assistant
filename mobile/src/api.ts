@@ -17,6 +17,101 @@ export type Command = { action: string; board_id: string; title: string; descrip
 // Файл на телефоне: адрес, имя и тип.
 export type LocalFile = { uri: string; name: string; type: string };
 
+// ---------- Вход ----------
+
+// Токен сессии, который выдал бэкенд после входа через Nextcloud.
+// Здесь он только в памяти; на диске телефона его хранит auth.ts (SecureStore).
+let token: string | null = null;
+
+export function setToken(t: string | null) {
+  token = t;
+}
+
+// Заголовок Authorization: Bearer <токен>. Его ждёт requireAuth в Go.
+function authHeaders(): Record<string, string> {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+// Что делать, если сервер ответил 401 (токен отозван или устарел).
+// App.tsx подставляет сюда «показать экран входа».
+let onUnauthorized: () => void = () => {};
+
+export function setOnUnauthorized(fn: () => void) {
+  onUnauthorized = fn;
+}
+
+// Ошибка «нужно войти заново». Экраны её не показывают: App уже переключился на вход.
+export class AuthError extends Error {
+  constructor() {
+    super('нужно войти');
+    this.name = 'AuthError';
+  }
+}
+
+export function isAuthError(e: unknown): boolean {
+  return e instanceof Error && e.name === 'AuthError';
+}
+
+// Общая проверка: на 401 сообщаем App и бросаем AuthError.
+function check401(resp: Response) {
+  if (resp.status === 401) {
+    onUnauthorized();
+    throw new AuthError();
+  }
+}
+
+// POST /auth/start: адрес страницы входа Nextcloud и токен опроса.
+export async function startLogin(): Promise<{ login_url: string; poll_token: string }> {
+  const resp = await fetch(`${API_URL}/auth/start`, { method: 'POST' });
+  if (!resp.ok) {
+    throw new Error(`/auth/start ответил ${resp.status}`);
+  }
+  return resp.json();
+}
+
+// POST /auth/poll: null, пока пользователь не вошёл (202), потом токен и логин (200).
+export async function pollLogin(pollToken: string): Promise<{ token: string; login: string } | null> {
+  const resp = await fetch(`${API_URL}/auth/poll`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ poll_token: pollToken }),
+  });
+  if (resp.status === 202) {
+    return null;
+  }
+  if (!resp.ok) {
+    throw new Error(`/auth/poll ответил ${resp.status}`);
+  }
+  return resp.json();
+}
+
+// GET /me: логин, если токен действует; null, если сервер ответил 401.
+// Ошибку сети бросаем: «нет связи» это не повод выкидывать пользователя.
+export async function getMe(): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const resp = await fetch(`${API_URL}/me`, { headers: authHeaders(), signal: controller.signal });
+    if (resp.status === 401) {
+      return null;
+    }
+    if (!resp.ok) {
+      throw new Error(`/me ответил ${resp.status}`);
+    }
+    const data: { login: string } = await resp.json();
+    return data.login;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// POST /auth/logout: сервер удаляет сессию и отзывает пароль приложения в Nextcloud.
+export async function logout(): Promise<void> {
+  await fetch(`${API_URL}/auth/logout`, { method: 'POST', headers: authHeaders() });
+}
+
+// ---------- Заявки ----------
+
 // В Expo SDK 57 fetch заменён на новый (expo/fetch), и старый приём
 // form.append('files', {uri, name, type}) больше не работает: падает
 // «Unsupported FormDataPart implementation». Новый fetch умеет брать файлы
@@ -47,7 +142,8 @@ export async function checkHealth(): Promise<boolean> {
 
 // GET /boards: список досок Nextcloud Deck.
 export async function getBoards(): Promise<Board[]> {
-  const resp = await fetch(`${API_URL}/boards`);
+  const resp = await fetch(`${API_URL}/boards`, { headers: authHeaders() });
+  check401(resp);
   if (!resp.ok) {
     throw new Error(`/boards ответил ${resp.status}`);
   }
@@ -64,12 +160,16 @@ export async function assist(text: string): Promise<AssistResult> {
   try {
     const resp = await fetch(`${API_URL}/assist`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ text }),
       signal: controller.signal,
     });
     if (resp.ok) {
       return { ok: true, command: await resp.json() };
+    }
+    if (resp.status === 401) {
+      onUnauthorized();
+      return { ok: false, reason: 'unavailable' };
     }
     // 422: ИИ не понял доску. Остальное (502 и т. п.): модель недоступна.
     return { ok: false, reason: resp.status === 422 ? 'no_board' : 'unavailable' };
@@ -84,7 +184,8 @@ export async function assist(text: string): Promise<AssistResult> {
 export async function transcribe(audio: LocalFile): Promise<string> {
   const form = new FormData();
   form.append('audio', filePart(audio));
-  const resp = await fetch(`${API_URL}/transcribe`, { method: 'POST', body: form });
+  const resp = await fetch(`${API_URL}/transcribe`, { method: 'POST', headers: authHeaders(), body: form });
+  check401(resp);
   if (!resp.ok) {
     throw new Error(`${resp.status}: ${await resp.text()}`);
   }
@@ -106,8 +207,9 @@ export async function createCard(
   for (const p of photos) {
     form.append('files', filePart(p));
   }
-  // Content-Type не ставим: fetch сам добавит его вместе с boundary.
-  const resp = await fetch(`${API_URL}/cards`, { method: 'POST', body: form });
+  // Content-Type не ставим: fetch сам добавит его вместе с boundary. Authorization не мешает.
+  const resp = await fetch(`${API_URL}/cards`, { method: 'POST', headers: authHeaders(), body: form });
+  check401(resp);
   if (resp.status !== 201) {
     throw new Error(`${resp.status}: ${await resp.text()}`);
   }

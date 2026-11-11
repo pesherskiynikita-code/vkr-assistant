@@ -26,7 +26,20 @@ import {
   useAudioRecorderState,
 } from 'expo-audio';
 
-import { assist, AssistResult, Board, checkHealth, createCard, getBoards, LocalFile, transcribe } from './src/api';
+import {
+  assist,
+  AssistResult,
+  Board,
+  checkHealth,
+  createCard,
+  getBoards,
+  isAuthError,
+  LocalFile,
+  setOnUnauthorized,
+  transcribe,
+} from './src/api';
+import { forget, restoreSession, signOut } from './src/auth';
+import { LoginScreen } from './src/LoginScreen';
 import { AiProgress } from './src/AiProgress';
 import { BoardPicker } from './src/BoardPicker';
 import { AppButton, Banner, Card, colors, IconButton, IconName } from './src/ui';
@@ -39,12 +52,57 @@ type Step = 'input' | 'confirm' | 'done';
 export default function App() {
   return (
     <SafeAreaProvider>
-      <Main />
+      <Root />
     </SafeAreaProvider>
   );
 }
 
-function Main() {
+// Root решает, что показать: экран входа или основное приложение.
+// undefined — ещё проверяем сохранённый вход, null — нужно войти, строка — логин.
+function Root() {
+  const [login, setLogin] = useState<string | null | undefined>(undefined);
+  const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    // Любой ответ 401 от сервера (токен отозван) возвращает на экран входа.
+    setOnUnauthorized(() => {
+      forget();
+      setNotice('Сессия закончилась. Войдите снова.');
+      setLogin(null);
+    });
+    restoreSession()
+      .then(setLogin)
+      .catch(() => setLogin(null)); // хранилище недоступно: просто покажем вход
+  }, []);
+
+  async function logoutPressed() {
+    await signOut();
+    setNotice('');
+    setLogin(null);
+  }
+
+  if (login === undefined) {
+    return (
+      <View style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator color={colors.primary} size="large" />
+      </View>
+    );
+  }
+  if (login === null) {
+    return (
+      <LoginScreen
+        notice={notice}
+        onSignedIn={(l) => {
+          setNotice('');
+          setLogin(l);
+        }}
+      />
+    );
+  }
+  return <Main login={login} onLogout={logoutPressed} />;
+}
+
+function Main({ login, onLogout }: { login: string; onLogout: () => void }) {
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState<Step>('input');
 
@@ -127,7 +185,9 @@ function Main() {
         setText((old) => (old.trim() ? `${old.trim()} ${heard}` : heard));
       }
     } catch (e) {
-      Alert.alert('Не удалось распознать речь', String(e));
+      if (!isAuthError(e)) {
+        Alert.alert('Не удалось распознать речь', String(e));
+      }
     } finally {
       setTranscribing(false);
     }
@@ -188,8 +248,11 @@ function Main() {
       setOnline(true);
       res = await assist(text);
     } catch (e) {
-      setOnline(false);
       setAiOpen(false);
+      if (isAuthError(e)) {
+        return; // уже показан экран входа
+      }
+      setOnline(false);
       // Ждём, пока окно закроется: на iPhone сообщение поверх закрывающегося окна теряется.
       setTimeout(() => Alert.alert('Нет связи с сервером', String(e)), 400);
       return;
@@ -237,10 +300,20 @@ function Main() {
       await createCard(boardId, title.trim(), text.trim(), photos);
       setStep('done');
     } catch (e) {
-      Alert.alert('Не удалось создать карточку', String(e));
+      if (!isAuthError(e)) {
+        Alert.alert('Не удалось создать карточку', String(e));
+      }
     } finally {
       setLoading(false);
     }
+  }
+
+  // Кнопка с человечком в шапке: кто вошёл и «Выйти».
+  function accountPressed() {
+    Alert.alert(login ? `Вы вошли как ${login}` : 'Вы вошли', 'Карточки создаются от вашего имени в Nextcloud.', [
+      { text: 'Отмена', style: 'cancel' },
+      { text: 'Выйти', style: 'destructive', onPress: onLogout },
+    ]);
   }
 
   function reset() {
@@ -441,19 +514,28 @@ function Main() {
     <View style={[styles.root, { paddingTop: insets.top + 12 }]}>
       <StatusBar style="dark" />
 
-      {/* Шапка: название и индикатор связи с сервером */}
+      {/* Шапка: название, индикатор связи с сервером и кнопка учётной записи */}
       <View style={styles.header}>
         <Text style={styles.appName}>Заявка</Text>
-        <View style={styles.status}>
-          <View
-            style={[
-              styles.dot,
-              { backgroundColor: online === null ? colors.muted : online ? colors.success : colors.danger },
-            ]}
-          />
-          <Text style={styles.statusText}>
-            {online === null ? 'Проверка…' : online ? 'Сервер на связи' : 'Нет связи'}
-          </Text>
+        <View style={styles.headerRight}>
+          <View style={styles.status}>
+            <View
+              style={[
+                styles.dot,
+                { backgroundColor: online === null ? colors.muted : online ? colors.success : colors.danger },
+              ]}
+            />
+            <Text style={styles.statusText}>
+              {online === null ? 'Проверка…' : online ? 'Сервер на связи' : 'Нет связи'}
+            </Text>
+          </View>
+          <Pressable
+            onPress={accountPressed}
+            hitSlop={8}
+            style={({ pressed }) => [styles.account, pressed && { opacity: 0.6 }]}
+          >
+            <Ionicons name="person" size={18} color={colors.primary} />
+          </Pressable>
         </View>
       </View>
       {step !== 'done' && (
@@ -490,6 +572,15 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   dot: { width: 8, height: 8, borderRadius: 4 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  account: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   statusText: { fontSize: 13, color: colors.muted },
   subtitle: { fontSize: 15, color: colors.muted, paddingHorizontal: 20, marginTop: 4, marginBottom: 4 },
   scroll: { padding: 16, paddingBottom: 24 },
