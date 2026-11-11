@@ -69,12 +69,12 @@ func decrypt(key, data []byte) (string, error) {
 	if len(data) < gcm.NonceSize() {
 		return "", errors.New("шифротекст слишком короткий")
 	}
-	nonce, sealed := data[:gcm.NonceSize()], data[____:] // две переменные одной строкой
+	nonce, sealed := data[:gcm.NonceSize()], data[gcm.NonceSize():] // две переменные одной строкой
 
 	// Open(куда_дописать, nonce, что_расшифровать, доп_данные): зеркально Seal
 	plain, err := gcm.Open(nil, nonce, sealed, nil)
 	if err != nil {
 		return "", err // другой ключ или испорченные данные
 	}
-	return ____(plain), nil // байты обратно в строку
+	return string(plain), nil // байты обратно в строку
 }
