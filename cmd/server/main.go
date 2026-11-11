@@ -11,11 +11,12 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/ai"
+	"github.com/pesherskiynikita-code/vkr-assistant/internal/auth"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/config"
-	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration"
-	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration/nextcloud" 
-	"github.com/pesherskiynikita-code/vkr-assistant/internal/stt"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/directory"
+	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration"
+	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration/nextcloud"
+	"github.com/pesherskiynikita-code/vkr-assistant/internal/stt"
 )
 
 func main() {
@@ -40,7 +41,11 @@ func main() {
 	var transcriber stt.Transcriber = stt.Stub{}
 	if cfg.WhisperURL != "" {
 		transcriber = stt.NewWhisper(cfg.WhisperURL, cfg.WhisperModel, cfg.WhisperPrompt)
-	}	
+	}
+	sessions, err := auth.Open(cfg.DBPath, cfg.SessionKey)
+	if err != nil {
+		log.Fatal(err)
+	}
 	client := nextcloud.NewClient(cfg.NextcloudURL, cfg.NextcloudUser, cfg.NextcloudAppPassword, cfg.NextcloudStack)
 	mux := http.NewServeMux()
 
@@ -126,10 +131,10 @@ func main() {
 		if len(dir) > 0 {
 			var known []integration.Board
 			for _, b := range boards {
-				if desc, ok := dir[b.ID]; ok {   
+				if desc, ok := dir[b.ID]; ok {
 					b.Description = desc
 					known = append(known, b)
-					}
+				}
 			}
 			boards = known
 		}
@@ -147,7 +152,7 @@ func main() {
 
 	})
 	mux.HandleFunc("POST /transcribe", func(w http.ResponseWriter, r *http.Request) {
-	// 1. r.ParseMultipartForm(32 << 20), ошибка → 400
+		// 1. r.ParseMultipartForm(32 << 20), ошибка → 400
 		if err := r.ParseMultipartForm(32 << 20); err != nil { // разобрать форму, до 32 МБ в памяти
 			http.Error(w, "некорректная форма", http.StatusBadRequest)
 			return
@@ -171,8 +176,56 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(struct{ Text string `json:"text"`}{text})
-})
+		json.NewEncoder(w).Encode(struct {
+			Text string `json:"text"`
+		}{text})
+	})
+	mux.HandleFunc("POST /auth/start", func(w http.ResponseWriter, r *http.Request) {
+		start, err := nextcloud.StartLogin(r.Context(), cfg.NextcloudURL)
+		if err != nil {
+			log.Println("auth start:", err)
+			http.Error(w, "Nextcloud недоступен", http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"login_url":  start.Login,
+			"poll_token": start.Poll.Token,
+		})
+	})
+	mux.HandleFunc("POST /auth/poll", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			PollToken string `json:"poll_token"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.PollToken == "" {
+			http.Error(w, "нужен poll_token", http.StatusBadRequest)
+			return
+		}
+
+		endpoint := strings.TrimRight(cfg.NextcloudURL, "/") + "/index.php/login/v2/poll"
+		res, done, err := nextcloud.PollLogin(r.Context(), endpoint, req.PollToken)
+		if err != nil {
+			log.Println("auth poll:", err)
+			http.Error(w, "Nextcloud недоступен", http.StatusBadGateway)
+			return
+		}
+		if !done {
+			w.WriteHeader(http.StatusAccepted) // 202: запрос принят, но результата ещё нет
+			return
+		}
+
+		token, err := sessions.Create(res.LoginName, res.AppPassword)
+		if err != nil {
+			log.Println("create session:", err)
+			http.Error(w, "не удалось создать сессию", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"token": token,
+			"login": res.LoginName,
+		})
+	})
 
 	log.Println("слушаю :8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))

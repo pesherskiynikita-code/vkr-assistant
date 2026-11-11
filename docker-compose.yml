@@ -18,4 +18,8 @@ services:
       SESSION_KEY: ${SESSION_KEY}
     volumes:
       - /opt/vkr-assistant/boards.json:/data/boards.json:ro
+      - vkr-data:/var/lib/vkr
     restart: unless-stopped
+
+volumes:
+  vkr-data:
