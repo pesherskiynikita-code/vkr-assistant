@@ -226,8 +226,32 @@ func main() {
 			"login": res.LoginName,
 		})
 	})
+	mux.HandleFunc("GET /me", func(w http.ResponseWriter, r *http.Request) {
+		login, _, err := sessions.Lookup(bearerToken(r))
+		if errors.Is(err, auth.ErrNoSession) {
+			http.Error(w, "нужно войти", http.StatusUnauthorized) // 401
+			return
+		}
+		if err != nil {
+			log.Println("me:", err)
+			http.Error(w, "ошибка сервера", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"login": login})
+	})
 
 	log.Println("слушаю :8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
 
+}
+
+// bearerToken достаёт токен из заголовка "Authorization: Bearer <токен>".
+func bearerToken(r *http.Request) string {
+	h := r.Header.Get("Authorization")
+	token, ok := strings.CutPrefix(h, "Bearer ")
+	if !ok {
+		return ""
+	}
+	return token
 }
