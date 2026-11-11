@@ -76,3 +76,24 @@ func PollLogin(ctx context.Context, endpoint, token string) (res LoginResult, do
 		return LoginResult{}, false, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 }
+
+// RevokeAppPassword удаляет пароль приложения в Nextcloud: после этого он больше не работает.
+func RevokeAppPassword(ctx context.Context, baseURL, login, appPassword string) error {
+	url := strings.TrimRight(baseURL, "/") + "/ocs/v2.php/core/apppassword"
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(login, appPassword)
+	req.Header.Set("OCS-APIRequest", "true")
+
+	resp, err := loginHTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("revoke app password: статус %d", resp.StatusCode)
+	}
+	return nil
+}

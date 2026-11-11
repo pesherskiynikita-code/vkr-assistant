@@ -52,7 +52,7 @@ func main() {
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})
-	mux.HandleFunc("GET /boards", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /boards", requireAuth(sessions, func(w http.ResponseWriter, r *http.Request) {
 		boards, err := client.ListBoards(r.Context())
 		if err != nil {
 			log.Println("list boards:", err)
@@ -61,9 +61,9 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(boards)
-	})
+	}))
 
-	mux.HandleFunc("POST /cards", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /cards", requireAuth(sessions, func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseMultipartForm(32 << 20); err != nil { // разобрать форму, до 32 МБ в памяти
 			http.Error(w, "некорректная форма", http.StatusBadRequest)
 			return
@@ -106,9 +106,9 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(card)
-	})
+	}))
 
-	mux.HandleFunc("POST /assist", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /assist", requireAuth(sessions, func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Text string `json:"text"`
 		}
@@ -150,8 +150,9 @@ func main() {
 
 		json.NewEncoder(w).Encode(cmd)
 
-	})
-	mux.HandleFunc("POST /transcribe", func(w http.ResponseWriter, r *http.Request) {
+	}))
+
+	mux.HandleFunc("POST /transcribe", requireAuth(sessions, func(w http.ResponseWriter, r *http.Request) {
 		// 1. r.ParseMultipartForm(32 << 20), ошибка → 400
 		if err := r.ParseMultipartForm(32 << 20); err != nil { // разобрать форму, до 32 МБ в памяти
 			http.Error(w, "некорректная форма", http.StatusBadRequest)
@@ -179,7 +180,8 @@ func main() {
 		json.NewEncoder(w).Encode(struct {
 			Text string `json:"text"`
 		}{text})
-	})
+	}))
+
 	mux.HandleFunc("POST /auth/start", func(w http.ResponseWriter, r *http.Request) {
 		start, err := nextcloud.StartLogin(r.Context(), cfg.NextcloudURL)
 		if err != nil {
@@ -240,6 +242,28 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"login": login})
 	})
+	mux.HandleFunc("POST /auth/logout", func(w http.ResponseWriter, r *http.Request) {
+		token := bearerToken(r)
+		login, appPassword, err := sessions.Lookup(token)
+		if errors.Is(err, auth.ErrNoSession) {
+			w.WriteHeader(http.StatusNoContent) // 204: и так не вошёл, считаем, что вышел
+			return
+		}
+		if err != nil {
+			log.Println("logout:", err)
+			http.Error(w, "ошибка сервера", http.StatusInternalServerError)
+			return
+		}
+		if err := nextcloud.RevokeAppPassword(r.Context(), cfg.NextcloudURL, login, appPassword); err != nil {
+			log.Println("revoke:", err) // записываем, но выход не останавливаем
+		}
+		if err := sessions.Delete(token); err != nil {
+			log.Println("logout delete:", err)
+			http.Error(w, "ошибка сервера", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 
 	log.Println("слушаю :8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
@@ -254,4 +278,21 @@ func bearerToken(r *http.Request) string {
 		return ""
 	}
 	return token
+}
+
+// requireAuth пропускает запрос к next, только если в нём действующий токен.
+func requireAuth(sessions *auth.Store, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		_, _, err := sessions.Lookup(bearerToken(r))
+		if errors.Is(err, auth.ErrNoSession) {
+			http.Error(w, "нужно войти", http.StatusUnauthorized)
+			return
+		}
+		if err != nil {
+			log.Println("auth:", err)
+			http.Error(w, "ошибка сервера", http.StatusInternalServerError)
+			return
+		}
+		next(w, r) // токен в порядке: зовём настоящий обработчик
+	}
 }
