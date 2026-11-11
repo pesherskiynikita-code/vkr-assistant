@@ -46,13 +46,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	client := nextcloud.NewClient(cfg.NextcloudURL, cfg.NextcloudUser, cfg.NextcloudAppPassword, cfg.NextcloudStack)
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})
-	mux.HandleFunc("GET /boards", requireAuth(sessions, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /boards", requireAuth(sessions, cfg, func(w http.ResponseWriter, r *http.Request, client *nextcloud.Client) {
 		boards, err := client.ListBoards(r.Context())
 		if err != nil {
 			log.Println("list boards:", err)
@@ -63,7 +62,7 @@ func main() {
 		json.NewEncoder(w).Encode(boards)
 	}))
 
-	mux.HandleFunc("POST /cards", requireAuth(sessions, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /cards", requireAuth(sessions, cfg, func(w http.ResponseWriter, r *http.Request, client *nextcloud.Client) {
 		if err := r.ParseMultipartForm(32 << 20); err != nil { // разобрать форму, до 32 МБ в памяти
 			http.Error(w, "некорректная форма", http.StatusBadRequest)
 			return
@@ -108,7 +107,7 @@ func main() {
 		json.NewEncoder(w).Encode(card)
 	}))
 
-	mux.HandleFunc("POST /assist", requireAuth(sessions, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /assist", requireAuth(sessions, cfg, func(w http.ResponseWriter, r *http.Request, client *nextcloud.Client) {
 		var req struct {
 			Text string `json:"text"`
 		}
@@ -152,7 +151,7 @@ func main() {
 
 	}))
 
-	mux.HandleFunc("POST /transcribe", requireAuth(sessions, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /transcribe", requireAuth(sessions, cfg, func(w http.ResponseWriter, r *http.Request, client *nextcloud.Client) {
 		// 1. r.ParseMultipartForm(32 << 20), ошибка → 400
 		if err := r.ParseMultipartForm(32 << 20); err != nil { // разобрать форму, до 32 МБ в памяти
 			http.Error(w, "некорректная форма", http.StatusBadRequest)
@@ -280,10 +279,14 @@ func bearerToken(r *http.Request) string {
 	return token
 }
 
+// authedHandler это обработчик, который получает клиента Nextcloud вошедшего пользователя.
+type authedHandler func(w http.ResponseWriter, r *http.Request, client *nextcloud.Client)
+
 // requireAuth пропускает запрос к next, только если в нём действующий токен.
-func requireAuth(sessions *auth.Store, next http.HandlerFunc) http.HandlerFunc {
+
+func requireAuth(sessions *auth.Store, cfg config.Config, next authedHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, _, err := sessions.Lookup(bearerToken(r))
+		login, appPassword, err := sessions.Lookup(bearerToken(r))
 		if errors.Is(err, auth.ErrNoSession) {
 			http.Error(w, "нужно войти", http.StatusUnauthorized)
 			return
@@ -293,6 +296,8 @@ func requireAuth(sessions *auth.Store, next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "ошибка сервера", http.StatusInternalServerError)
 			return
 		}
-		next(w, r) // токен в порядке: зовём настоящий обработчик
+
+		client := nextcloud.NewClient(cfg.NextcloudURL, login, appPassword, cfg.NextcloudStack)
+		next(w, r, client)
 	}
 }
