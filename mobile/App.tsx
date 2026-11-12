@@ -516,7 +516,7 @@ function Main({ login, onLogout }: { login: string; onLogout: () => void }) {
 
       {/* Шапка: название, индикатор связи с сервером и кнопка учётной записи */}
       <View style={styles.header}>
-        <Text style={styles.appName}>Заявка</Text>
+        <Text style={styles.appName}>X2 Helpdesk</Text>
         <View style={styles.headerRight}>
           <View style={styles.status}>
             <View
@@ -526,7 +526,7 @@ function Main({ login, onLogout }: { login: string; onLogout: () => void }) {
               ]}
             />
             <Text style={styles.statusText}>
-              {online === null ? 'Проверка…' : online ? 'Сервер на связи' : 'Нет связи'}
+              {online === null ? 'Проверка…' : online ? 'На связи' : 'Нет связи'}
             </Text>
           </View>
           <Pressable
@@ -561,7 +561,7 @@ function Main({ login, onLogout }: { login: string; onLogout: () => void }) {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20 },
-  appName: { fontSize: 30, fontWeight: '800', color: colors.text },
+  appName: { fontSize: 26, fontWeight: '800', color: colors.text },
   status: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -1,20 +1,23 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "X2 Helpdesk",
+    "slug": "x2-helpdesk",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/x2-icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.x2groups.helpdesk"
     },
     "android": {
+      "package": "com.x2groups.helpdesk",
+      "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#2563EB",
+        "foregroundImage": "./assets/x2-android-foreground.png",
+        "backgroundImage": "./assets/x2-android-background.png",
+        "monochromeImage": "./assets/x2-android-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
     },
@@ -22,11 +25,23 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Микрофон нужен, чтобы надиктовать заявку голосом."
+        }
+      ],
       "expo-asset",
       "expo-status-bar",
       "expo-web-browser",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Камера нужна, чтобы сфотографировать проблему для заявки.",
+          "photosPermission": "Доступ к фото нужен, чтобы прикрепить снимок к заявке."
+        }
+      ]
     ]
   }
 }

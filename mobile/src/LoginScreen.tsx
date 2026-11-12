@@ -53,7 +53,7 @@ export function LoginScreen({ onSignedIn, notice }: Props) {
         <View style={styles.logo}>
           <Ionicons name="mic" size={44} color="#fff" />
         </View>
-        <Text style={styles.title}>Заявка</Text>
+        <Text style={styles.title}>X2 Helpdesk</Text>
         <Text style={styles.text}>
           Голосовые заявки в Nextcloud Deck. Войдите своей учётной записью Nextcloud, и карточки будут создаваться от
           вашего имени.
