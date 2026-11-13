@@ -2,9 +2,10 @@ package auth
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
-	"errors"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -26,7 +27,7 @@ func Open(path, sessionKey string) (*Store, error) {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 
-		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS sessions (
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS sessions (
 		token_hash   TEXT PRIMARY KEY,
 		login        TEXT NOT NULL,
 		app_password BLOB NOT NULL,
@@ -34,6 +35,15 @@ func Open(path, sessionKey string) (*Store, error) {
 	)`)
 	if err != nil {
 		return nil, fmt.Errorf("create table: %w", err)
+	}
+
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS board_profiles (
+	board_id    TEXT PRIMARY KEY,
+	description TEXT NOT NULL,
+	updated_at  INTEGER NOT NULL
+	)`)
+	if err != nil {
+		return nil, fmt.Errorf("create table board_profiles: %w", err)
 	}
 
 	return &Store{db: db, key: key}, nil

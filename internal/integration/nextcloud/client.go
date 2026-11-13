@@ -33,10 +33,11 @@ type deckCard struct {
 	Title string `json:"title"`
 }
 type deckStack struct {
-	ID        int    `json:"id"`
-	Title     string `json:"title"`
-	Archived  bool   `json:"archived"`
-	DeletedAt int64  `json:"deletedAt"`
+	ID        int        `json:"id"`
+	Title     string     `json:"title"`
+	Archived  bool       `json:"archived"`
+	DeletedAt int64      `json:"deletedAt"`
+	Cards     []deckCard `json:"cards"`
 }
 type Client struct {
 	baseURL    string
@@ -86,10 +87,11 @@ func (c *Client) ListBoards(ctx context.Context) ([]integration.Board, error) {
 	return result, nil
 
 }
-func (c *Client) findStack(ctx context.Context, boardID int, name string) (int, error) {
+
+func (c *Client) getStacks(ctx context.Context, boardID int) ([]deckStack, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/index.php/apps/deck/api/v1.0/boards/%d/stacks", c.baseURL, boardID), nil)
 	if err != nil {
-		return 0, fmt.Errorf("build request: %w", err)
+		return nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("OCS-APIRequest", "true")
@@ -97,16 +99,23 @@ func (c *Client) findStack(ctx context.Context, boardID int, name string) (int, 
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("do request: %w", err)
+		return nil, fmt.Errorf("do request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 	var stacks []deckStack
 	if err := json.NewDecoder(resp.Body).Decode(&stacks); err != nil {
-		return 0, fmt.Errorf("decode: %w", err)
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+	return stacks, nil
+}
+func (c *Client) findStack(ctx context.Context, boardID int, name string) (int, error) {
+	stacks, err := c.getStacks(ctx, boardID)
+	if err != nil {
+		return 0, err
 	}
 	for _, s := range stacks {
 		if strings.HasPrefix(strings.TrimSpace(s.Title), "$") || s.DeletedAt != 0 {
@@ -202,4 +211,32 @@ func (c *Client) addAttachment(ctx context.Context, boardID, stackID, cardID int
 
 	}
 	return nil
+}
+
+// BoardSample возвращает названия списков и до limit заголовков карточек доски.
+// Из этих строк ИИ составит описание доски.
+func (c *Client) BoardSample(ctx context.Context, boardID string, limit int) ([]string, error) {
+	n, err := strconv.Atoi(boardID)
+	if err != nil {
+		return nil, fmt.Errorf("неверный id доски: %q %w", boardID, err)
+	}
+	stacks, err := c.getStacks(ctx, n)
+	if err != nil {
+		return nil, err
+	}
+
+	var lines []string
+	for _, s := range stacks {
+		if s.DeletedAt != 0 {
+			continue
+		}
+		lines = append(lines, "Список: "+s.Title)
+		for _, card := range s.Cards {
+			if len(lines) >= limit {
+				return lines, nil // набрали достаточно
+			}
+			lines = append(lines, "- "+card.Title)
+		}
+	}
+	return lines, nil
 }
