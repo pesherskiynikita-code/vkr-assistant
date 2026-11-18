@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"context"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/ai"
@@ -37,7 +40,8 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Printf("справочник досок: %d записей", len(dir))
-	var assistant ai.Assistant = ai.NewOllama(cfg.OllamaURL, cfg.OllamaModel)
+	ollama := ai.NewOllama(cfg.OllamaURL, cfg.OllamaModel)
+	var assistant ai.Assistant = ollama
 	var transcriber stt.Transcriber = stt.Stub{}
 	if cfg.WhisperURL != "" {
 		transcriber = stt.NewWhisper(cfg.WhisperURL, cfg.WhisperModel, cfg.WhisperPrompt)
@@ -127,16 +131,25 @@ func main() {
 			return
 		}
 
-		if len(dir) > 0 {
-			var known []integration.Board
-			for _, b := range boards {
-				if desc, ok := dir[b.ID]; ok {
-					b.Description = desc
-					known = append(known, b)
-				}
-			}
-			boards = known
+		profiles, err := sessions.Profiles()
+		if err != nil {
+			log.Println("profiles:", err) // не беда: просто пойдём без автоописаний
 		}
+
+		var missing []integration.Board // доски, для которых описания ещё нет
+		for i, b := range boards {
+			if desc, ok := dir[b.ID]; ok {
+				boards[i].Description = desc // ручное описание из boards.json важнее
+			} else if desc, ok := profiles[b.ID]; ok {
+				boards[i].Description = desc // автоописание из базы
+			} else {
+				missing = append(missing, b)
+			}
+		}
+		if len(missing) > 0 && describing.TryLock() {
+			go describeBoards(client, ollama, sessions, missing)
+		}
+		
 		cmd, err := assistant.Parse(r.Context(), req.Text, boards)
 		if errors.Is(err, ai.ErrNoBoard) {
 			http.Error(w, "не удалось определить доску", http.StatusUnprocessableEntity)
@@ -299,5 +312,32 @@ func requireAuth(sessions *auth.Store, cfg config.Config, next authedHandler) ht
 
 		client := nextcloud.NewClient(cfg.NextcloudURL, login, appPassword, cfg.NextcloudStack)
 		next(w, r, client)
+	}
+}
+// describing не даёт запустить два фоновых описания одновременно.
+var describing sync.Mutex
+
+// describeBoards: для досок без описания берёт карточки, просит qwen описать доску и сохраняет в базу.
+func describeBoards(client *nextcloud.Client, ollama *ai.Ollama, sessions *auth.Store, boards []integration.Board) {
+	defer describing.Unlock()
+	for _, b := range boards {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		sample, err := client.BoardSample(ctx, b.ID, 40)
+		if err != nil {
+			cancel()
+			log.Printf("профиль доски %s: карточки: %v", b.ID, err)
+			continue
+		}
+		desc, err := ollama.Describe(ctx, b.Title, sample)
+		cancel()
+		if err != nil {	
+			log.Printf("профиль доски %s: qwen: %v", b.ID, err)
+			continue
+		}
+		if err := sessions.SaveProfile(b.ID, desc); err != nil {
+			log.Printf("профиль доски %s: сохранение: %v", b.ID, err)
+			continue
+		}
+		log.Printf("профиль доски %s (%s): %s", b.ID, b.Title, desc)
 	}
 }
