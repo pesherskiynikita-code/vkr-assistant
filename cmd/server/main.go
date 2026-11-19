@@ -8,9 +8,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
-	"context"
-	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/ai"
@@ -20,9 +17,13 @@ import (
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/integration/nextcloud"
 	"github.com/pesherskiynikita-code/vkr-assistant/internal/stt"
+	"github.com/pesherskiynikita-code/vkr-assistant/internal/boardsync"
 )
 
 func main() {
+
+
+	
 	err := godotenv.Load()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -50,6 +51,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	syncer := boardsync.New(ollama, sessions)
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
@@ -64,6 +66,43 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(boards)
+	}))
+
+	mux.HandleFunc("POST /boards/sync", requireAuth(sessions, cfg, func(w http.ResponseWriter, r *http.Request, client *nextcloud.Client) {
+	boards, err := client.ListBoards(r.Context())
+	if err != nil {
+		log.Println("list boards:", err)
+		http.Error(w, "не удалось получить доски", http.StatusBadGateway)
+		return
+	}
+	all := r.URL.Query().Get("all") == "1" // кнопка «Обновить доски»: переописать всё
+
+	profiles, err := sessions.Profiles()
+	if err != nil {
+		log.Println("profiles:", err)
+	}
+
+	var todo []integration.Board
+	for _, b := range boards {
+		if _, ok := dir[b.ID]; ok {
+			continue // ручное описание из boards.json, qwen не нужна
+		}
+		if _, ok := profiles[b.ID]; ok && !all {
+			continue // описание уже есть, а полное обновление не просили
+		}
+		todo = append(todo, b)
+	}
+	syncer.Start(client, todo)
+	w.WriteHeader(http.StatusAccepted) // 202: «принял, работаю»
+	}))
+mux.HandleFunc("GET /boards/sync", requireAuth(sessions, cfg, func(w http.ResponseWriter, r *http.Request, client *nextcloud.Client) {
+	running, done, total := syncer.Status()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"running": running,
+		"done":    done,
+		"total":   total,
+	})
 	}))
 
 	mux.HandleFunc("POST /cards", requireAuth(sessions, cfg, func(w http.ResponseWriter, r *http.Request, client *nextcloud.Client) {
@@ -136,20 +175,17 @@ func main() {
 			log.Println("profiles:", err) // не беда: просто пойдём без автоописаний
 		}
 
-		var missing []integration.Board // доски, для которых описания ещё нет
-		for i, b := range boards {
+		var known []integration.Board
+		for _, b := range boards {
 			if desc, ok := dir[b.ID]; ok {
-				boards[i].Description = desc // ручное описание из boards.json важнее
+				b.Description = desc
+				known = append(known, b)
 			} else if desc, ok := profiles[b.ID]; ok {
-				boards[i].Description = desc // автоописание из базы
-			} else {
-				missing = append(missing, b)
-			}
+				b.Description = desc
+				known = append(known, b)
+			} 
 		}
-		if len(missing) > 0 && describing.TryLock() {
-			go describeBoards(client, ollama, sessions, missing)
-		}
-		
+		boards = known // qwen увидит только доски с описанием
 		cmd, err := assistant.Parse(r.Context(), req.Text, boards)
 		if errors.Is(err, ai.ErrNoBoard) {
 			http.Error(w, "не удалось определить доску", http.StatusUnprocessableEntity)
@@ -314,30 +350,8 @@ func requireAuth(sessions *auth.Store, cfg config.Config, next authedHandler) ht
 		next(w, r, client)
 	}
 }
-// describing не даёт запустить два фоновых описания одновременно.
-var describing sync.Mutex
 
-// describeBoards: для досок без описания берёт карточки, просит qwen описать доску и сохраняет в базу.
-func describeBoards(client *nextcloud.Client, ollama *ai.Ollama, sessions *auth.Store, boards []integration.Board) {
-	defer describing.Unlock()
-	for _, b := range boards {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		sample, err := client.BoardSample(ctx, b.ID, 40)
-		if err != nil {
-			cancel()
-			log.Printf("профиль доски %s: карточки: %v", b.ID, err)
-			continue
-		}
-		desc, err := ollama.Describe(ctx, b.Title, sample)
-		cancel()
-		if err != nil {	
-			log.Printf("профиль доски %s: qwen: %v", b.ID, err)
-			continue
-		}
-		if err := sessions.SaveProfile(b.ID, desc); err != nil {
-			log.Printf("профиль доски %s: сохранение: %v", b.ID, err)
-			continue
-		}
-		log.Printf("профиль доски %s (%s): %s", b.ID, b.Title, desc)
-	}
-}
+
+
+
+	

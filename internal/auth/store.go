@@ -42,6 +42,10 @@ func Open(path, sessionKey string) (*Store, error) {
 	description TEXT NOT NULL,
 	updated_at  INTEGER NOT NULL
 	)`)
+	// ВРЕМЕННО: стереть выдуманные описания пустых досок. В следующем коммите удалить.
+	if _, err := db.Exec(`DELETE FROM board_profiles`); err != nil {
+		return nil, fmt.Errorf("clear board_profiles: %w", err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("create table board_profiles: %w", err)
 	}
