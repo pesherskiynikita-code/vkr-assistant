@@ -42,6 +42,7 @@ import { forget, restoreSession, signOut } from './src/auth';
 import { LoginScreen } from './src/LoginScreen';
 import { AiProgress } from './src/AiProgress';
 import { BoardPicker } from './src/BoardPicker';
+import { needsDailySync, SyncScreen } from './src/SyncScreen';
 import { AppButton, Banner, Card, colors, IconButton, IconName } from './src/ui';
 
 // Приложение — три экрана подряд: ввод → подтверждение → готово.
@@ -62,16 +63,25 @@ export default function App() {
 function Root() {
   const [login, setLogin] = useState<string | null | undefined>(undefined);
   const [notice, setNotice] = useState('');
+  // Экран «Инициализация досок»: null — не показан, 'new' — только новые доски, 'all' — все заново.
+  const [sync, setSync] = useState<null | 'new' | 'all'>(null);
 
   useEffect(() => {
     // Любой ответ 401 от сервера (токен отозван) возвращает на экран входа.
     setOnUnauthorized(() => {
       forget();
       setNotice('Сессия закончилась. Войдите снова.');
+      setSync(null);
       setLogin(null);
     });
     restoreSession()
-      .then(setLogin)
+      .then(async (l) => {
+        // Уже вошли раньше: раз в сутки проверяем, не появились ли новые доски.
+        if (l && (await needsDailySync())) {
+          setSync('new');
+        }
+        setLogin(l);
+      })
       .catch(() => setLogin(null)); // хранилище недоступно: просто покажем вход
   }, []);
 
@@ -94,15 +104,23 @@ function Root() {
         notice={notice}
         onSignedIn={(l) => {
           setNotice('');
+          setSync('new'); // сразу после входа описываем доски, которых ИИ ещё не знает
           setLogin(l);
         }}
       />
     );
   }
-  return <Main login={login} onLogout={logoutPressed} />;
+  return (
+    <>
+      <Main login={login} onLogout={logoutPressed} onRefreshBoards={() => setSync('all')} />
+      <SyncScreen visible={sync !== null} all={sync === 'all'} onDone={() => setSync(null)} />
+    </>
+  );
 }
 
-function Main({ login, onLogout }: { login: string; onLogout: () => void }) {
+type MainProps = { login: string; onLogout: () => void; onRefreshBoards: () => void };
+
+function Main({ login, onLogout, onRefreshBoards }: MainProps) {
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState<Step>('input');
 
@@ -308,10 +326,11 @@ function Main({ login, onLogout }: { login: string; onLogout: () => void }) {
     }
   }
 
-  // Кнопка с человечком в шапке: кто вошёл и «Выйти».
+  // Кнопка с человечком в шапке: кто вошёл, «Обновить доски» и «Выйти».
   function accountPressed() {
     Alert.alert(login ? `Вы вошли как ${login}` : 'Вы вошли', 'Карточки создаются от вашего имени в Nextcloud.', [
       { text: 'Отмена', style: 'cancel' },
+      { text: 'Обновить доски', onPress: onRefreshBoards },
       { text: 'Выйти', style: 'destructive', onPress: onLogout },
     ]);
   }
@@ -413,6 +432,14 @@ function Main({ login, onLogout }: { login: string; onLogout: () => void }) {
             value={text}
             onChangeText={setText}
           />
+          {/* Подсказка: ИИ выбирает доску по объекту, поэтому его лучше назвать первым. */}
+          <View style={styles.tip}>
+            <Ionicons name="bulb-outline" size={16} color={colors.muted} style={{ marginTop: 1 }} />
+            <Text style={styles.tipText}>
+              Сначала назовите объект: город, сеть или ТЦ, номер магазина. Потом что случилось. Например: «Сургут,
+              Лента, не работает касса».
+            </Text>
+          </View>
           {transcribing && (
             <View style={styles.inlineStatus}>
               <ActivityIndicator color={colors.primary} />
@@ -596,6 +623,8 @@ const styles = StyleSheet.create({
   },
   multiline: { minHeight: 100, textAlignVertical: 'top' },
   inlineStatus: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+  tip: { flexDirection: 'row', gap: 6, marginTop: 10 },
+  tipText: { flex: 1, fontSize: 13, lineHeight: 18, color: colors.muted },
   inlineStatusText: { color: colors.primary, fontSize: 14 },
 
   tiles: { flexDirection: 'row', gap: 12 },

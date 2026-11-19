@@ -214,3 +214,31 @@ export async function createCard(
     throw new Error(`${resp.status}: ${await resp.text()}`);
   }
 }
+
+// ---------- Описание досок ----------
+
+// Прогресс описания досок: идёт ли оно и сколько досок из скольки уже готово.
+export type SyncStatus = { running: boolean; done: number; total: number };
+
+// POST /boards/sync: сервер начинает описывать доски в фоне и сразу отвечает 202.
+// all = true — переописать все доски (пункт «Обновить доски»), иначе только новые.
+export async function startBoardSync(all: boolean): Promise<void> {
+  const resp = await fetch(`${API_URL}/boards/sync${all ? '?all=1' : ''}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  check401(resp);
+  if (resp.status !== 202) {
+    throw new Error(`/boards/sync ответил ${resp.status}`);
+  }
+}
+
+// GET /boards/sync: сколько досок уже описано. Отвечает сразу, его можно спрашивать часто.
+export async function getBoardSync(): Promise<SyncStatus> {
+  const resp = await fetch(`${API_URL}/boards/sync`, { headers: authHeaders() });
+  check401(resp);
+  if (!resp.ok) {
+    throw new Error(`/boards/sync ответил ${resp.status}`);
+  }
+  return resp.json();
+}
